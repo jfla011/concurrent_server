@@ -43,11 +43,13 @@ void serve_connection(int sockfd) {
             case WAIT_FOR_MSG:
                 if (buf[i] == '^') {
                     state = IN_MSG;
+                    printf("Received message from %d: %s\n", sockfd, buf);
                 }
                 break;
             case IN_MSG:
                 if (buf[i] == '$') {
                     state = WAIT_FOR_MSG;
+                    printf("Waiting for message from %d\n", sockfd);
                 } else {
                     buf[i] += 1;
                     if (send(sockfd, &buf[i], 1, 0) < 1) {
