@@ -13,6 +13,9 @@
 #include <unistd.h>
 
 #include "utils.h"
+#include "tpool.h"
+
+static const int num_threads = 4;
 
 typedef struct { int sockfd; } thread_config_t;
 typedef enum { WAIT_FOR_MSG, IN_MSG } ProcessingState;
@@ -62,13 +65,19 @@ void serve_connection(int sockfd)
     close(sockfd);
 }
 
-void* server_thread(void* arg) {
+
+void server_thread(void* arg) {
     thread_config_t *config = (thread_config_t *)arg;
     int sockfd = config->sockfd;
     free(config);
 
+    // This cast will work for Linux, but in general casting pthread_id to an
+    // integral type isn't portable.
+    unsigned long id = (unsigned long)pthread_self();
+    printf("Thread %lu created to handle connection with socket %d\n", id, sockfd);
     serve_connection(sockfd);
-    return 0;
+    printf("Thread %lu done\n", id);
+    return;
 }
 
 
@@ -102,6 +111,8 @@ void* wait_for_client(void* arg) {
 
 int main(int argc, char **argv)
 {
+    tpool_t *tp;
+
     setvbuf(stdout, NULL, _IONBF, 0);
 
     int portnum = 9090;
@@ -113,43 +124,25 @@ int main(int argc, char **argv)
 
     int sockfd = listen_inet_socket(portnum);
 
-    pthread_t the_thread;
     thread_config_t* config = (thread_config_t*)malloc(sizeof(*config));
     if (!config) {
         perror("OOM");
         exit(1);
     }
+    tp = tpool_create(num_threads);
     config->sockfd = sockfd;
-    for (int i=0; i<4; ++i) {
-        pthread_create(&the_thread, NULL, wait_for_client, config);
-        sleep(2);
+    for (;;) {
+        struct sockaddr_in peer_addr;
+        socklen_t peer_addr_len = sizeof(peer_addr);
+        int newfd = accept(sockfd, (struct sockaddr *)&peer_addr, &peer_addr_len);
+        if (newfd < 0) {
+            perror("ERROR on accept");
+            exit(1);
+        }
+        report_peer_connected(&peer_addr, peer_addr_len);
+        config->sockfd = newfd;
+        tpool_add_work(tp, server_thread, config);
     }
+    tpool_wait(tp);
     return 0;
 }
-
-//    while(1) {
-//        struct sockaddr_in peer_addr;
-//        socklen_t peer_addr_len = sizeof(peer_addr);
-//
-//        int newfd = accept(sockfd, (struct sockaddr*)&peer_addr, &peer_addr_len);
-//        if (newfd < 0) {
-//            perror("ERROR on accept");
-//            exit(1);
-//        }
-//
-//        report_peer_connected(&peer_addr, peer_addr_len);
-//        pthread_t the_thread;
-
-//        thread_config_t* config = (thread_config_t*)malloc(sizeof(*config));
-//        if (!config) {
-//            perror("OOM");
-//            exit(1);
-//       }
-
-//        config->sockfd = newfd;
-//        pthread_create(&the_thread, NULL, server_thread, config);
-
-        // Detach the thread - when it's done, its resources will be cleaned up.
-        // Since the main thread lives forever, it will outlive the serving threads.
-//        pthread_detach(the_thread);
-    
