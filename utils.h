@@ -13,4 +13,6 @@ void report_peer_connected(const struct sockaddr_in* sa, socklen_t salen);
 // the socket fd when successful; dies in case of errors.
 int listen_inet_socket(int portnum);
 
+void make_socket_non_blocking(int sockfd);
+
 #endif
